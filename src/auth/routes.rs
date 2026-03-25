@@ -5,13 +5,14 @@ use crate::{
     user::models::{User, UserList},
     routes::JsonCreate,
 };
-use axum::{routing::post, Json, Router};
+use axum::{http::StatusCode, routing::post, Json, Router};
 use rand::{distributions::Alphanumeric, Rng};
 
 /// Create routes for `/v1/auth/` namespace
 pub fn create_route() -> Router {
     Router::new()
         .route("/login", post(make_login))
+    .route("/logout", post(logout))
         .route("/signup", post(signup))
 }
 
@@ -24,7 +25,7 @@ async fn make_login(Json(payload): Json<LoginCredentials>) -> Result<Json<AuthBo
             .ok_or(AppError::Unauthorized)?;
         let user = get_or_create_ldap_user(identity).await?;
 
-        let claims = Claims::new(user.id);
+        let claims = Claims::new(user.id, user.token_version);
         let token = claims.get_token()?;
         return Ok(Json(AuthBody::new(token)));
     }
@@ -37,7 +38,7 @@ async fn make_login(Json(payload): Json<LoginCredentials>) -> Result<Json<AuthBo
     );
     match User::find(user).await {
         Ok(user) => {
-            let claims = Claims::new(user.id);
+            let claims = Claims::new(user.id, user.token_version);
             let token = claims.get_token()?;
             Ok(Json(AuthBody::new(token)))
         }
@@ -79,9 +80,15 @@ async fn signup(Json(payload): Json<SignUpForm>) -> Result<JsonCreate<AuthBody>,
     );
     let user = User::create(user).await?;
 
-    let claims = Claims::new(user.id);
+    let claims = Claims::new(user.id, user.token_version);
     let token = claims.get_token()?;
     Ok(JsonCreate(AuthBody::new(token)))
+}
+
+/// Invalidate current JWT by bumping the user token version.
+async fn logout(claims: Claims) -> Result<StatusCode, AppError> {
+    User::bump_token_version(claims.user_id).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn get_or_create_ldap_user(identity: ldap::LdapIdentity) -> Result<UserList, AppError> {

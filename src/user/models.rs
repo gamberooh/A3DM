@@ -47,6 +47,8 @@ pub struct UserList {
     pub is_staff: Option<bool>,
     #[serde_as(as = "NoneAsEmptyString")]
     pub avatar: Option<String>,
+    #[serde(skip_serializing)]
+    pub token_version: i32,
 }
 
 impl User {
@@ -76,7 +78,7 @@ impl User {
             r#"
                 INSERT INTO users (name, email, username, password)
                 VALUES ( $1, $2, $3, $4)
-                RETURNING id, name, email, username, is_staff, avatar
+                RETURNING id, name, email, username, is_staff, avatar, token_version
             "#,
         )
         .bind(user.name)
@@ -97,7 +99,7 @@ impl User {
 
         let rec: UserList = sqlx::query_as(
             r#"
-                SELECT id, name, email, username, is_staff, avatar FROM "users"
+                SELECT id, name, email, username, is_staff, avatar, token_version FROM "users"
                 WHERE username = $1 AND password = $2
             "#,
         )
@@ -115,7 +117,7 @@ impl User {
 
         let rec: UserList = sqlx::query_as(
             r#"
-                SELECT id, name, email, username, is_staff, avatar FROM "users"
+                SELECT id, name, email, username, is_staff, avatar, token_version FROM "users"
                 WHERE username = $1
             "#,
         )
@@ -134,7 +136,7 @@ impl User {
             r#"
                 UPDATE users SET is_staff = $1
                 WHERE username = $2
-                RETURNING id, name, email, username, is_staff, avatar
+                RETURNING id, name, email, username, is_staff, avatar, token_version
             "#,
         )
         .bind(is_staff)
@@ -145,13 +147,46 @@ impl User {
         Ok(rec)
     }
 
+    /// Get current token version for an user.
+    pub async fn token_version(user_id: i32) -> Result<i32, AppError> {
+        let pool = unsafe { get_client() };
+        let cursor = sqlx::query(
+            r#"
+                SELECT token_version FROM users WHERE id = $1
+            "#,
+        )
+        .bind(user_id)
+        .fetch_one(pool)
+        .await?;
+
+        let token_version: i32 = cursor.try_get(0).unwrap();
+        Ok(token_version)
+    }
+
+    /// Invalidate all active tokens by increasing token version.
+    pub async fn bump_token_version(user_id: i32) -> Result<(), AppError> {
+        let pool = unsafe { get_client() };
+        sqlx::query(
+            r#"
+                UPDATE users
+                SET token_version = token_version + 1
+                WHERE id = $1
+            "#,
+        )
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+
+        Ok(())
+    }
+
     /// Returns the user with id = `user_id`
     pub async fn find_by_id(user_id: i32) -> Result<UserList, AppError> {
         let pool = unsafe { get_client() };
 
         let rec: UserList = sqlx::query_as(
             r#"
-                SELECT id, name, email, username, is_staff, avatar FROM "users"
+                SELECT id, name, email, username, is_staff, avatar, token_version FROM "users"
                 WHERE id = $1
             "#,
         )
@@ -166,7 +201,7 @@ impl User {
     pub async fn list(page: i64) -> Result<Vec<UserList>, AppError> {
         let pool = unsafe { get_client() };
         let rows: Vec<UserList> = sqlx::query_as(
-            r#"SELECT id, name, email, username, is_staff, avatar FROM users
+            r#"SELECT id, name, email, username, is_staff, avatar, token_version FROM users
             ORDER BY id DESC
             LIMIT $1 OFFSET $2
             "#,

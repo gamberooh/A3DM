@@ -51,53 +51,95 @@ Role mapping is synchronized at each LDAP login.
 This is a guide for a good deploy on a [Dokku](https://dokku.me) server, which
 deploys Verden on port 9090.
 
-Dockerfile defines a `DATABASE_URL` argument by default cause `sqlx` dependence
-but, if you define the environment variabile, it will use the one you defined on
-`dokku config`.
+Dockerfile includes FreeIPA CA installation at build time using `IPA_CA_URL`
+build arg (default: `https://ipa.lab.students.cs.unibo.it/ipa/config/ca.crt`).
 
-1. Log into the server and create a new app
+1. Create app and database service
    ```
-   dokku apps:create verden-api
+   dokku apps:create verden2
+   dokku postgres:create verden2-db
+   dokku postgres:link verden2-db verden2
    ```
-2. Create the database and link it to the app. `DATABASE_URL` automatically set
+
+2. Create a storage where uploads will be located
    ```
-   dokku postgres:create verden-api # Database has got the same app name
-   dokku postgres:link verden-api verden-api
+   mkdir -p /var/lib/dokku/data/storage/verden2/uploads/
+   dokku storage:mount verden2 /var/lib/dokku/data/storage/verden2/uploads:/storage/uploads
    ```
-3. Create a storage where uploads will be located
+
+3. Set required config vars
    ```
-   mkdir -p /var/lib/dokku/data/storage/verden-api/uploads/
-   dokku storage:mount verden-api /var/lib/dokku/data/storage/verden-api/uploads:/storage/uploads
+   dokku config:set verden2 JWT_SECRET=foobar
+   dokku config:set verden2 PAGE_LIMIT=20
+   dokku config:set verden2 SAVE_FILE_BASE_PATH=/storage/uploads
+   dokku config:set verden2 UPLOADS_ENDPOINT=/uploads
+   dokku config:set verden2 RUST_LOG=verden=debug,tower_http=debug
+   dokku config:set verden2 ALLOWED_HOST=0.0.0.0:9090
+   dokku config:set verden2 SENTRY_DSN=https://example@example.ingest.sentry.io/42
    ```
-4. Set config vars
+
+4. Set LDAP vars (optional)
    ```
-   dokku config:set verden-api JWT_SECRET=foobar
-   dokku config:set verden-api PAGE_LIMIT=20
-   dokku config:set verden-api SAVE_FILE_BASE_PATH=/storage/uploads
-   dokku config:set verden-api UPLOADS_ENDPOINT=/uploads
-   dokku config:set verden-api RUST_LOG=verden=debug,tower_http=debug
-   dokku config:set verdena-pi ALLOWED_HOST=0.0.0.0:9090
-   dokku config:set verdena-pi SENTRY_DSN=https://example@example.ingest.sentry.io/42
+   dokku config:set verden2 LDAP_ENABLED=true
+   dokku config:set verden2 LDAP_URL=ldaps://ipa.lab.students.cs.unibo.it:636
+   dokku config:set verden2 LDAP_BASE_DN=cn=accounts,dc=lab,dc=students,dc=cs,dc=unibo,dc=it
+   dokku config:set verden2 LDAP_BIND_DN='uid=radius,cn=users,cn=accounts,dc=lab,dc=students,dc=cs,dc=unibo,dc=it'
+   dokku config:set verden2 LDAP_BIND_PASSWORD='changeme'
+   dokku config:set verden2 LDAP_USER_FILTER='(uid={username})'
+   dokku config:set verden2 LDAP_USERNAME_ATTR=uid
+   dokku config:set verden2 LDAP_NAME_ATTR=cn
+   dokku config:set verden2 LDAP_EMAIL_ATTR=mail
+   dokku config:set verden2 LDAP_MEMBEROF_ATTR=memberOf
+   dokku config:set verden2 LDAP_ADMIN_GROUP_DN='cn=verden-admins,cn=groups,cn=accounts,dc=lab,dc=students,dc=cs,dc=unibo,dc=it'
    ```
-5. Fix ports for HTTP
+
+   Full command in one shot:
    ```
-   dokku proxy:ports-add verden-api http:80:9090
-   dokku proxy:ports-remove verden-api http:9090:9090
+   dokku config:set verden2 LDAP_ENABLED=true LDAP_URL=ldaps://ipa.lab.students.cs.unibo.it:636 LDAP_BASE_DN=cn=accounts,dc=lab,dc=students,dc=cs,dc=unibo,dc=it LDAP_BIND_DN='uid=radius,cn=users,cn=accounts,dc=lab,dc=students,dc=cs,dc=unibo,dc=it' LDAP_BIND_PASSWORD='changeme' LDAP_USER_FILTER='(uid={username})' LDAP_USERNAME_ATTR=uid LDAP_NAME_ATTR=cn LDAP_EMAIL_ATTR=mail LDAP_MEMBEROF_ATTR=memberOf LDAP_ADMIN_GROUP_DN='cn=verden-admins,cn=groups,cn=accounts,dc=lab,dc=students,dc=cs,dc=unibo,dc=it'
    ```
-6. Add a remote and push this code
+
+   Disable LDAP and use local auth again:
    ```
-   git remote add dokku dokku_user@your_server:verden-api
+   dokku config:set verden2 LDAP_ENABLED=false
+   ```
+
+   Check effective LDAP config:
+   ```
+   dokku config:get verden2 LDAP_ENABLED
+   dokku config:get verden2 LDAP_URL
+   dokku config:get verden2 LDAP_BASE_DN
+   dokku config:get verden2 LDAP_BIND_DN
+   ```
+
+5. Set build arg for FreeIPA CA (optional override)
+   ```
+   dokku docker-options:add verden2 build '--build-arg IPA_CA_URL=https://ipa.lab.students.cs.unibo.it/ipa/config/ca.crt'
+   ```
+
+6. Configure domain and ports
+   ```
+   dokku domains:set verden2 api.a3dm.lab.students.cs.unibo.it
+   dokku ports:clear verden2
+   dokku ports:add verden2 http:9090:9090
+   dokku ports:add verden2 https:443:9090
+   ```
+
+7. Add a remote and push this code
+   ```
+   git remote add dokku dokku@your_server:verden2
    git push dokku main
    ```
-7. Install [Let's Encrypt](https://github.com/dokku/dokku-letsencrypt)
+
+8. Run database migrations
+   ```
+   dokku run verden2 sqlx migrate run
+   ```
+
+9. Install [Let's Encrypt](https://github.com/dokku/dokku-letsencrypt)
    ```
    sudo dokku plugin:install https://github.com/dokku/dokku-letsencrypt.git
-   dokku config:set --no-restart verden-api DOKKU_LETSENCRYPT_EMAIL=your_email
-   dokku letsencrypt:enable verden-api
+   dokku config:set --no-restart verden2 DOKKU_LETSENCRYPT_EMAIL=your_email
+   dokku letsencrypt:enable verden2
    ```
-8. Log in the app and run migrate
-   ```
-   dokku enter verden-api
-   sqlx migrate run
-   ```
-9. Enjoy Verden at `https://verden-api.<your-server>`
+
+10. Enjoy Verden at `https://api.a3dm.lab.students.cs.unibo.it`

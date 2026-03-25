@@ -4,6 +4,7 @@ use axum::{
     extract::{FromRequest, RequestParts, TypedHeader},
     headers::{authorization::Bearer, Authorization},
 };
+use crate::user::models::User;
 use chrono::{Duration, Local};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use once_cell::sync::Lazy;
@@ -19,6 +20,8 @@ struct Keys {
 pub struct Claims {
     /// ID from the user model
     pub user_id: i32,
+    /// User token version used to invalidate old JWTs on logout.
+    pub token_version: i32,
     /// Expiration timestamp
     exp: usize,
 }
@@ -65,11 +68,12 @@ impl Keys {
 
 impl Claims {
     /// Create a new Claim using the `user_id` and the current timestamp + 2 days
-    pub fn new(user_id: i32) -> Self {
+    pub fn new(user_id: i32, token_version: i32) -> Self {
         let expiration = Local::now() + Duration::days(1);
 
         Self {
             user_id,
+            token_version,
             exp: expiration.timestamp() as usize,
         }
     }
@@ -114,6 +118,14 @@ where
         let now = Local::now().timestamp() as usize;
 
         if token_data.claims.exp < now {
+            return Err(AppError::InvalidToken);
+        }
+
+        let current_token_version = User::token_version(token_data.claims.user_id)
+            .await
+            .map_err(|_| AppError::InvalidToken)?;
+
+        if token_data.claims.token_version != current_token_version {
             return Err(AppError::InvalidToken);
         }
 
