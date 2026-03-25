@@ -97,18 +97,30 @@ pub async fn show_uploads(Path(id): Path<String>) -> (HeaderMap, Vec<u8>) {
     if index != usize::max_value() {
         ext_name = &id[index + 1..];
     }
+    let ext_name = ext_name.to_lowercase();
     let mut headers = HeaderMap::new();
 
-    if vec!["jpg", "jpeg", "png", "gif", "webp"]
-        .iter()
-        .any(|&x| x == ext_name)
-    {
-        let content_type = format!("image/{}", ext_name);
-        headers.insert(
-            HeaderName::from_static("content-type"),
-            HeaderValue::from_str(&content_type).unwrap(),
-        );
-    }
+    let content_type = match ext_name.as_str() {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "stl" => "model/stl",
+        "obj" => "text/plain",
+        _ => "application/octet-stream",
+    };
+
+    headers.insert(
+        HeaderName::from_static("content-type"),
+        HeaderValue::from_str(content_type).unwrap(),
+    );
+
+    let content_disposition = format!("attachment; filename=\"{}\"", id);
+    headers.insert(
+        HeaderName::from_static("content-disposition"),
+        HeaderValue::from_str(&content_disposition).unwrap(),
+    );
+
     let file_name = format!("{}/{}", CONFIG.save_file_base_path, id);
     (headers, fs::read(&file_name).unwrap())
 }
