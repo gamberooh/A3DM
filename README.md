@@ -25,7 +25,26 @@ UPLOADS_ENDPOINT="/uploads"
 RUST_LOG=verden=debug,tower_http=debug
 ALLOWED_HOST=localhost:3000
 SENTRY_DSN=.... # Optional
+
+# LDAP (optional)
+LDAP_ENABLED=false
+LDAP_URL=ldaps://ldap.example.com:636
+LDAP_BASE_DN=ou=people,dc=example,dc=com
+LDAP_BIND_DN=cn=readonly,dc=example,dc=com
+LDAP_BIND_PASSWORD=changeme
+LDAP_USER_FILTER=(uid={username})
+LDAP_USERNAME_ATTR=uid
+LDAP_NAME_ATTR=cn
+LDAP_EMAIL_ATTR=mail
+LDAP_MEMBEROF_ATTR=memberOf
+LDAP_ADMIN_GROUP_DN=cn=verden-admins,ou=groups,dc=example,dc=com
 ```
+
+When LDAP_ENABLED=true and LDAP variables are configured, `/v1/auth/login` authenticates against LDAP and
+creates a local user row on first login. In this mode `/v1/auth/signup` is disabled.
+LDAP credentials are never stored in the local database.
+When `LDAP_ADMIN_GROUP_DN` is configured, users in that LDAP group are mapped as admin (`is_staff=true`).
+Role mapping is synchronized at each LDAP login.
 
 # Deploy
 

@@ -12,6 +12,17 @@ pub struct Configuration {
     pub database_url: String,
     pub jwt_secret: String,
     pub allowed_host: String,
+    pub ldap_enabled: Option<bool>,
+    pub ldap_url: Option<String>,
+    pub ldap_base_dn: Option<String>,
+    pub ldap_bind_dn: Option<String>,
+    pub ldap_bind_password: Option<String>,
+    pub ldap_user_filter: Option<String>,
+    pub ldap_username_attr: Option<String>,
+    pub ldap_name_attr: Option<String>,
+    pub ldap_email_attr: Option<String>,
+    pub ldap_memberof_attr: Option<String>,
+    pub ldap_admin_group_dn: Option<String>,
 }
 
 pub struct Sentry(pub ClientInitGuard);

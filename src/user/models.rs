@@ -109,6 +109,42 @@ impl User {
         Ok(rec)
     }
 
+    /// Find an user by username without password check.
+    pub async fn find_by_username(username: &str) -> Result<UserList, AppError> {
+        let pool = unsafe { get_client() };
+
+        let rec: UserList = sqlx::query_as(
+            r#"
+                SELECT id, name, email, username, is_staff, avatar FROM "users"
+                WHERE username = $1
+            "#,
+        )
+        .bind(username)
+        .fetch_one(pool)
+        .await?;
+
+        Ok(rec)
+    }
+
+    /// Update staff flag by username and returns updated user.
+    pub async fn set_staff_by_username(username: &str, is_staff: bool) -> Result<UserList, AppError> {
+        let pool = unsafe { get_client() };
+
+        let rec: UserList = sqlx::query_as(
+            r#"
+                UPDATE users SET is_staff = $1
+                WHERE username = $2
+                RETURNING id, name, email, username, is_staff, avatar
+            "#,
+        )
+        .bind(is_staff)
+        .bind(username)
+        .fetch_one(pool)
+        .await?;
+
+        Ok(rec)
+    }
+
     /// Returns the user with id = `user_id`
     pub async fn find_by_id(user_id: i32) -> Result<UserList, AppError> {
         let pool = unsafe { get_client() };
