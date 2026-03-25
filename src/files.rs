@@ -17,25 +17,37 @@ pub async fn upload(
     let mut uploaded_file = String::new();
 
     if let Some(file) = multipart.next_field().await.unwrap() {
-        let content_type = file.content_type().unwrap().to_string();
+        let content_type = file.content_type().unwrap_or("application/octet-stream");
+        let content_type_ext = content_type
+            .split('/')
+            .nth(1)
+            .unwrap_or("octet-stream")
+            .to_lowercase();
 
-        let index = content_type.find('/').unwrap_or(usize::max_value());
-        let mut ext_name = "xxx";
-        if index != usize::max_value() {
-            ext_name = &content_type[index + 1..];
+        let filename_ext = file
+            .file_name()
+            .and_then(|name| path::Path::new(name).extension())
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.to_lowercase());
+
+        let ext_name = filename_ext.unwrap_or(content_type_ext);
+
+        if ext_name == "octet-stream" {
+            return Err(AppError::BadRequest(
+                "Unable to detect file extension. Please upload files with a valid extension (.stl, .obj, .png, .jpg, .jpeg, .webp)."
+                    .to_string(),
+            ));
         }
 
-        if allowed_extensions
-            .iter()
-            .any(|&x| x.to_lowercase() == ext_name)
-        {
+        if allowed_extensions.iter().any(|&x| x.eq_ignore_ascii_case(&ext_name)) {
             let mut name = match filename {
                 Some(name) => name,
                 None => (random::<f32>() * 1000000000 as f32).to_string(),
             };
 
             loop {
-                let save_filename = format!("{}/{}.{}", CONFIG.save_file_base_path, name, ext_name);
+                let save_filename =
+                    format!("{}/{}.{}", CONFIG.save_file_base_path, name, ext_name);
 
                 if path::Path::exists(&path::Path::new(&save_filename)) {
                     name = (random::<f32>() * 1000000000 as f32).to_string();

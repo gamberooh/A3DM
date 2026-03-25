@@ -151,11 +151,7 @@ async fn upload_model_file(
         "png",
         "jpg",
         "jpeg",
-        "gif",
         "webp",
-        "blend",
-        "octet-stream",
-        "sla",
     ];
 
     match upload(multipart, allowed_extensions, None).await {
