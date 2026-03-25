@@ -85,27 +85,31 @@ async fn signup(Json(payload): Json<SignUpForm>) -> Result<JsonCreate<AuthBody>,
 }
 
 async fn get_or_create_ldap_user(identity: ldap::LdapIdentity) -> Result<UserList, AppError> {
-    if let Ok(user) = User::find_by_username(&identity.username).await {
-        if user.is_staff.unwrap_or(false) != identity.is_staff {
-            return User::set_staff_by_username(&identity.username, identity.is_staff).await;
+    let username = identity.username;
+    let name = identity.name;
+    let mut email = identity.email;
+    let is_staff = identity.is_staff;
+
+    if let Ok(user) = User::find_by_username(&username).await {
+        if user.is_staff.unwrap_or(false) != is_staff {
+            return User::set_staff_by_username(&username, is_staff).await;
         }
 
         return Ok(user);
     }
 
-    let mut email = identity.email;
     if User::email_has_taken(&email).await? {
-        email = format!("{}+ldap@ldap.local", identity.username);
+        email = format!("{}+ldap@ldap.local", username);
     }
 
     // Never persist LDAP credentials: we store a local, random non-usable placeholder.
     let password = generate_unusable_local_password();
 
-    let user = User::new(identity.name, email, identity.username, password);
+    let user = User::new(name, email, username.clone(), password);
     let user = User::create(user).await?;
 
-    if identity.is_staff {
-        return User::set_staff_by_username(&identity.username, true).await;
+    if is_staff {
+        return User::set_staff_by_username(&username, true).await;
     }
 
     Ok(user)

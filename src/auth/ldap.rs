@@ -115,7 +115,7 @@ pub async fn authenticate(username: &str, password: &str) -> Result<Option<LdapI
     let escaped_username = ldap3::ldap_escape(username);
     let filter = settings
         .user_filter
-        .replace("{username}", escaped_username.as_str());
+        .replace("{username}", escaped_username.as_ref());
 
     let (entries, _result) = ldap
         .search(
